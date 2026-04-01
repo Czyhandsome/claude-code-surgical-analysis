@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code — Code Surgical Analysis Report | Claude Code 代码外科分析报告</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+:root {
+  --bg: #ffffff;
+  --text: #1a1a1a;
+  --code-bg: #f6f8fa;
+  --border: #e1e4e8;
+  --link: #0969da;
+  --header-bg: #f6f8fa;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --text: #e6edf3;
+    --code-bg: #161b22;
+    --border: #30363d;
+    --link: #58a6ff;
+    --header-bg: #161b22;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  padding: 20px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.sticky-header {
+  position: sticky;
+  top: 0;
+  background: var(--header-bg);
+  padding: 15px 20px;
+  border-bottom: 2px solid var(--border);
+  z-index: 100;
+  margin: -20px -20px 30px -20px;
+}
+.lang-toggle {
+  background: var(--link);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+}
+.lang-toggle:hover { opacity: 0.9; }
+.hidden { display: none; }
+h1 { font-size: 2.5em; margin: 30px 0 10px; }
+h2 { font-size: 1.8em; margin: 40px 0 15px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+h3 { font-size: 1.4em; margin: 30px 0 12px; }
+p { margin: 15px 0; }
+ul, ol { margin: 15px 0; padding-left: 30px; }
+li { margin: 8px 0; }
+code {
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 0.9em;
+}
+pre {
+  background: var(--code-bg);
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 20px 0;
+  border: 1px solid var(--border);
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.metadata {
+  background: var(--code-bg);
+  padding: 15px;
+  border-radius: 6px;
+  margin: 20px 0;
+  border-left: 4px solid var(--link);
+}
+.metadata p { margin: 5px 0; }
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 40px 0;
+}
+strong { font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="sticky-header">
+  <button class="lang-toggle" onclick="toggleLanguage()">
+    <span id="toggle-text">🇨🇳 切换到中文</span>
+  </button>
+</div>
+
+<div id="content-en" class="lang-en">
+<h1>Claude Code — Code Surgical Analysis Report</h1>
+
+<div class="metadata">
+<p><strong>Analyzed Codebase:</strong> <code>repos/claude-code</code></p>
+<p><strong>Analysis Perspective:</strong> Builder of "Reel Creator" — an AI-native social media content creation Agent OS, analogous to Claude Code but for content creation instead of coding</p>
+<p><strong>Report Date:</strong> 2026-04-01</p>
+<p><strong>Analysis Passes Completed:</strong> 7</p>
+</div>
+
+<hr>
+
+<h2>0. Scope</h2>
+<p>This report surgically dissects the Claude Code codebase (<code>repos/claude-code/src/</code>) across seven analytical passes: entrypoint tracing, happy-path walkthrough, state architecture, dispatch mechanics, side-effect mapping, failure surface cataloging, and architectural compression. Every finding is tied to a specific file and line number. The terminal deliverable (sections 16–17) answers the Reel Creator builder's primary question: for each architectural component, is it COPY-PASTE, USE-THE-ESSENCE, or JUST-FOR-LEARN in Phase 1 (deadline: April 15)?</p>
+
+<p>The codebase ships approximately 150+ TypeScript source files under <code>src/</code>. Key files by line count: <code>src/main.tsx</code> (4,683 lines), <code>src/query.ts</code> (1,729 lines), <code>src/skills/loadSkillsDir.ts</code> (1,086 lines), <code>src/utils/forkedAgent.ts</code> (689 lines), <code>src/Tool.ts</code> (792 lines), <code>src/services/tools/toolOrchestration.ts</code> (188 lines), <code>src/state/store.ts</code> (34 lines), <code>src/query/deps.ts</code> (40 lines).</p>
+
+<hr>
+
+<h2>1. One-Sentence Machine Definition</h2>
+<p>Claude Code executes a stateful, permission-gated, tool-calling agent loop that ingests a natural-language prompt, iteratively dispatches LLM API calls and tool invocations until no tool-use blocks remain, and persists the full transcript as append-only JSONL while maintaining a multi-level context window compaction stack to keep token usage within model limits.</p>
+
+<hr>
+
+<h2>2. Why This Part Exists</h2>
+<p>The system exists to solve a specific reliability problem: raw LLM completions cannot safely write files, run shell commands, or perform multi-step operations on a real filesystem without (a) a deterministic dispatch layer that routes each model-requested tool call to the correct implementation, (b) a permission gate that enforces human-in-the-loop consent before destructive actions, and (c) a memory architecture that survives context window overflow across long sessions. Without all three, a pure chat interface would either silently fail on complex tasks or destructively modify the filesystem without user awareness.</p>
+
+<p>Reel Creator faces the identical problem domain shifted to content: raw LLM completions cannot safely publish to TikTok/Instagram, call asset generation APIs, or manage a multi-platform publishing pipeline without the same three components. The architectural motive transfers exactly; the tools change entirely.</p>
+
+<hr>
+
+<h2>3. Top-Level Control Picture</h2>
+<pre><code>CLI entrypoint (src/entrypoints/cli.tsx)
+    │
+    ▼
+Commander.js flag parsing (src/main.tsx)
+    │
+    ├─── Interactive REPL path ──► Ink/React UI (src/replLauncher.tsx)
+    │                                    │
+    │                              REPL input loop
+    │                                    │
+    └─── Headless/print path ──► QueryEngine.submitMessage()
+                                        │
+                                        ▼
+                               src/query.ts:queryLoop()   ◄─── while(true) iteration engine
+                                        │
+                          ┌─────────────┼──────────────┐
+                          ▼             ▼               ▼
+                   compaction    callModel()        runTools()
+                   checks        (LLM API)          (tool dispatch)
+                          │             │               │
+                          │      streaming SSE    permission gate
+                          │      tool_use blocks  → tool.call()
+                          │             │               │
+                          └─────────────┴───────────────┘
+                                        │
+                                   transcript
+                                   JSONL write
+                                  (~/.claude/projects/)
+</code></pre>
+
+<p>The loop terminates when the model emits a response with zero <code>tool_use</code> content blocks. State lives in three places simultaneously: the reactive <code>AppState</code> store (UI-facing), the <code>mutableMessages[]</code> array in <code>QueryEngine</code> (conversation history), and the append-only JSONL on disk (durable transcript).</p>
+
+<hr>
+
+<h2>4. Concrete Entrypoints</h2>
+<p><strong>Primary binary entrypoint:</strong> <code>src/entrypoints/cli.tsx:main()</code> — reads <code>process.argv</code>, performs fast-path exits for <code>--version</code> and <code>--daemon-worker</code> flags, then delegates to <code>src/main.tsx</code>.</p>
+
+<p><strong>CLI program definition:</strong> <code>src/main.tsx</code> — constructs a Commander.js program with a <code>[prompt]</code> positional argument and flags including <code>--print</code> (<code>-p</code>), <code>--model</code>, <code>--resume</code>, <code>--agent</code>, <code>--permission-mode</code>, <code>--output-format</code>, <code>--max-turns</code>, <code>--allowedTools</code>, <code>--disallowedTools</code>, and subcommands <code>mcp</code>, <code>auth</code>, <code>plugin</code>, <code>marketplace</code>, <code>agents</code>, <code>open</code>.</p>
+
+<p><strong>REPL slash commands:</strong> <code>src/commands.ts:COMMANDS()</code> — returns approximately 80+ in-REPL commands registered at startup: <code>/compact</code>, <code>/clear</code>, <code>/help</code>, <code>/model</code>, <code>/memory</code>, <code>/config</code>, <code>/mcp</code>, <code>/skills</code>, <code>/tasks</code>, <code>/review</code>, <code>/vim</code>, <code>/permissions</code>, <code>/plan</code>, <code>/hooks</code>, <code>/agents</code>, <code>/plugin</code>, <code>/rewind</code>, <code>/cost</code>, <code>/diff</code>, <code>/files</code>, <code>/branch</code>, <code>/resume</code>, <code>/session</code>, <code>/export</code>, <code>/stats</code>, <code>/effort</code>, <code>/fast</code>, <code>/passes</code>. Dynamic skill and plugin commands merge via <code>getCommands()</code> at line 476.</p>
+
+<p><strong>SDK/headless entrypoint:</strong> <code>src/QueryEngine.ts:184</code> — <code>QueryEngine</code> class constructor initializes <code>mutableMessages[]</code>, <code>abortController</code>, and <code>readFileState</code>. <code>submitMessage()</code> at line 209 assembles the full system prompt, processes user input, and calls <code>query()</code>.</p>
+
+<p><strong>Agent loop entrypoint:</strong> <code>src/query.ts:queryLoop()</code> at line 241 — async generator that drives all LLM calls and tool executions. Called by <code>query()</code> at line 219 which wraps the generator.</p>
+
+<hr>
+<h2>5. Happy-Path Surgical Walkthrough</h2>
+<p><strong>Scenario:</strong> User runs <code>claude "fix the bug in auth.ts"</code> from the terminal.</p>
+
+<p><strong>Step 1 — Binary reads argv:</strong> <code>src/entrypoints/cli.tsx:main()</code> receives <code>process.argv = ["node", "claude", "fix the bug in auth.ts"]</code>. No fast-path flags detected. Delegates to <code>src/main.tsx</code>.</p>
+
+<p><strong>Step 2 — Commander parses flags:</strong> <code>src/main.tsx</code> parses <code>"fix the bug in auth.ts"</code> as the <code>[prompt]</code> positional argument. Activates headless print path. Constructs <code>headlessStore</code> via <code>createStore(headlessInitialState)</code>.</p>
+
+<p><strong>Step 3 — QueryEngine initializes:</strong> Constructor sets <code>this.mutableMessages = []</code>, creates <code>AbortController</code>, initializes <code>readFileState</code>.</p>
+
+<p><strong>Step 4 — submitMessage() assembles context:</strong> Calls <code>fetchSystemPromptParts()</code> which loads base system prompt, CLAUDE.md hierarchy, and git status.</p>
+
+<p><strong>Step 5 — User input processes:</strong> <code>processUserInput()</code> receives the text, finds no slash command, creates a <code>UserMessage</code>, pushes to <code>mutableMessages</code>, records transcript.</p>
+
+<p><strong>Step 6 — query() delegates to queryLoop():</strong> Passes assembled messages, system prompt, tools list, and dependency injection object.</p>
+
+<p><strong>Step 7 — while(true) loop begins:</strong> Compaction checks run. Calls <code>deps.callModel()</code> which resolves to <code>queryModelWithStreaming</code>.</p>
+
+<p><strong>Step 8 — LLM streams response:</strong> Model responds with a <code>tool_use</code> block requesting <code>FileReadTool</code> for <code>auth.ts</code>.</p>
+
+<p><strong>Step 9 — Tools dispatch:</strong> <code>runTools()</code> partitions blocks. <code>FileReadTool</code> is read-only, runs concurrently.</p>
+
+<p><strong>Step 10 — Permission gate and tool execution:</strong> <code>checkPermissionsAndCallTool()</code> validates input with Zod schema. Read-only operations resolve to allow. Calls <code>tool.call()</code>.</p>
+
+<p><strong>Step 11 — Tool result feeds back:</strong> <code>FileReadTool</code> reads <code>auth.ts</code> contents. Result yields as <code>UserMessage</code> with <code>tool_result</code> block. Loop continues.</p>
+
+<p><strong>Step 12 — Second LLM call:</strong> Loop iteration 2 includes file contents. Model returns <code>FileEditTool</code> tool_use block.</p>
+
+<p><strong>Step 13 — Write permission check:</strong> Write operation requires confirmation. User sees Accept/Reject UI. User accepts.</p>
+
+<p><strong>Step 14 — Edit applies and loop terminates:</strong> <code>FileEditTool.call()</code> applies patch. Loop iteration 3: model returns zero <code>tool_use</code> blocks. Stop condition met. Transcript finalized.</p>
+
+<hr>
+
+<h2>6. Dispatch Map</h2>
+<p><strong>LLM → tool dispatch:</strong> Model emits <code>tool_use</code> blocks with a <code>name</code> field. <code>runTools()</code> receives blocks, partitions by read-only classification, dispatches via <code>runToolUse()</code>. <code>findToolByName()</code> locates the tool object.</p>
+
+<p><strong>Tool registry:</strong> <code>src/tools.ts:getAllBaseTools()</code> — hardcoded list: <code>AgentTool</code>, <code>BashTool</code>, <code>FileEditTool</code>, <code>FileReadTool</code>, <code>FileWriteTool</code>, <code>GlobTool</code>, <code>GrepTool</code>, <code>NotebookEditTool</code>, <code>TodoWriteTool</code>, <code>SkillTool</code>, <code>ToolSearchTool</code>, and others. MCP tools dynamically instantiate as <code>MCPTool</code> objects.</p>
+
+<p><strong>Slash command dispatch:</strong> <code>processUserInput()</code> calls <code>parseSlashCommand()</code> to detect leading <code>/</code>, then <code>findCommand()</code> to locate matching <code>Command</code> object. Commands with <code>call()</code> execute immediately. Commands returning prompt strings forward to model.</p>
+
+<p><strong>Subagent spawning:</strong> <code>runAgent()</code> creates isolated execution context via <code>createSubagentContext()</code>. Clones parent's file state cache, creates child <code>AbortController</code>, assigns new <code>agentId</code>, calls <code>query()</code> recursively.</p>
+
+<p><strong>MCP tool loading:</strong> <code>connectToServer()</code> creates transport, calls <code>client.listTools()</code>, instantiates <code>MCPTool</code> objects.</p>
+
+<p><strong>Skill loading:</strong> <code>loadSkillsDir.ts</code> scans skill directories. Each <code>.md</code> file with valid YAML frontmatter becomes a <code>PromptCommand</code>. When model calls <code>SkillTool</code>, it runs as forked agent sub-query.</p>
+
+<hr>
+<h2>7. State Model</h2>
+<p><strong>AppState:</strong> Primary reactive store for UI-facing and session-level state. Fields include: <code>settings</code>, <code>mainLoopModel</code>, <code>toolPermissionContext</code>, <code>mcp</code>, <code>plugins</code>, <code>tasks</code>, <code>fileHistory</code>, and all UI display fields.</p>
+
+<p><strong>Query loop state:</strong> Local mutable state inside <code>queryLoop()</code> — <code>messages[]</code>, <code>toolUseContext</code>, <code>autoCompactTracking</code>, <code>turnCount</code>. Lives only for one <code>queryLoop()</code> call.</p>
+
+<p><strong>Bootstrap state:</strong> Module-level global variables — <code>sessionId</code>, <code>totalCostUSD</code>, <code>modelUsage</code>, <code>isInteractive</code>, <code>registeredHooks</code>. Comment at line 32: "DO NOT ADD MORE STATE HERE."</p>
+
+<p><strong>Conversation history:</strong> Dual representation — in-memory as <code>mutableMessages[]</code> in <code>QueryEngine</code> and on-disk as append-only JSONL.</p>
+
+<p><strong>Tool permission state:</strong> <code>mode</code> (default/plan/bypassPermissions/auto), <code>alwaysAllowRules</code>, <code>alwaysDenyRules</code>, <code>alwaysAskRules</code> keyed by source.</p>
+
+<hr>
+
+<h2>8. Data Transformation Chain</h2>
+<ol>
+<li><strong>String → Commander ParsedArgs:</strong> Commander.js parses argv into structured arguments.</li>
+<li><strong>ParsedArgs → UserMessage:</strong> <code>processUserInput()</code> wraps string in typed <code>UserMessage</code> object.</li>
+<li><strong>UserMessage → API Request:</strong> <code>submitMessage()</code> assembles full request with system prompt, messages, tools, model config.</li>
+<li><strong>API Request → Streaming Events:</strong> SDK streams events, assembled into <code>AssistantMessage</code>.</li>
+<li><strong>AssistantMessage → ToolUseBlock[]:</strong> Loop collects <code>tool_use</code> content blocks.</li>
+<li><strong>ToolUseBlock → Zod-validated input:</strong> Each block's input passes through tool's Zod schema.</li>
+<li><strong>Validated input → Tool result:</strong> Tool executes, returns <code>tool_result</code>.</li>
+<li><strong>Tool result → UserMessage:</strong> Wrapped as <code>UserMessage</code>, appended to <code>messages[]</code>.</li>
+<li><strong>Final AssistantMessage → JSONL:</strong> Each message appends to session transcript.</li>
+</ol>
+
+<hr>
+
+<h2>9. Side-Effect Map</h2>
+<p><strong>Filesystem writes:</strong> Session transcripts, file edits, config saves, memory writes, undo snapshots.</p>
+<p><strong>LLM API calls:</strong> Primary model call per loop iteration, plus compaction summaries, memory extraction, agent summaries, prompt suggestions.</p>
+<p><strong>Subprocess spawns:</strong> <code>BashTool</code> with sandbox-exec wrapper, MCP stdio servers.</p>
+<p><strong>MCP network calls:</strong> <code>client.callTool()</code>, <code>client.listTools()</code>, <code>client.readResource()</code>.</p>
+<p><strong>Persistence paths:</strong> <code>~/.claude/projects/</code>, <code>~/.claude.json</code>, <code>.claude/settings.json</code>, <code>~/.claude/memory/</code>.</p>
+
+<hr>
+
+<h2>10. Important Branch Points</h2>
+<ul>
+<li><strong>Permission mode branch:</strong> Evaluates deny rules first, then allow rules, falls through to mode-based default.</li>
+<li><strong>Interactive vs. headless:</strong> <code>--print</code> flag or positional prompt routes to headless path.</li>
+<li><strong>Tool batching:</strong> Partitions into read-only (concurrent) vs. non-read-only (serial).</li>
+<li><strong>Context window overflow:</strong> Triggers compaction stack: Snip → Microcompact → Context Collapse → Autocompact → Reactive Compact.</li>
+<li><strong>Subagent vs. inline:</strong> <code>AgentTool</code> and <code>SkillTool</code> spawn isolated recursion.</li>
+<li><strong>Fallback model:</strong> <code>FallbackTriggeredError</code> switches to configured fallback.</li>
+</ul>
+
+<hr>
+
+<h2>11. Failure and Recovery Logic</h2>
+<ul>
+<li><strong>Permission denial:</strong> Returns <code>tool_result</code> with <code>is_error: true</code>.</li>
+<li><strong>Input validation failure:</strong> Zod parse fails → <code>InputValidationError</code> → error result to model.</li>
+<li><strong>Runtime tool error:</strong> Exception caught, wrapped as error result, fed back to model.</li>
+<li><strong>LLM API rate limiting:</strong> Exponential backoff with jitter on 429 responses.</li>
+<li><strong>Fallback model:</strong> Switches <code>mainLoopModel</code> to fallback, retries current turn.</li>
+<li><strong>Max output tokens recovery:</strong> Up to 3 retries by appending continuation meta-message.</li>
+<li><strong>Context window overflow stack:</strong> Five mechanisms at progressively higher severity.</li>
+<li><strong>Human-in-the-loop:</strong> Queues confirmation dialog for uncertain permissions.</li>
+</ul>
+
+<hr>
+
+<h2>12. The Real Core Loop</h2>
+<pre><code>queryLoop() ──calls──► queryModelWithStreaming()
+     │                         │
+     │                 streams AssistantMessage
+     │                         │
+     ◄────── tool_use blocks ───┘
+     │
+     ▼
+runTools() ──partitions──► runToolUse()
+                                │
+                    checkPermissionsAndCallTool()
+                                │
+                    hasPermissionsToUseTool()
+                                │
+                          tool.call()
+                                │
+                    tool_result → next iteration
+</code></pre>
+
+<p><strong>The seven load-bearing files:</strong></p>
+<ol>
+<li><code>src/query.ts:queryLoop()</code> — iteration engine, compaction orchestration, stop detection</li>
+<li><code>src/services/api/claude.ts:queryModelWithStreaming()</code> — LLM call, streaming assembly</li>
+<li><code>src/services/tools/toolExecution.ts:checkPermissionsAndCallTool()</code> — tool dispatch + permission gate</li>
+<li><code>src/Tool.ts</code> — tool type system, <code>findToolByName()</code></li>
+<li><code>src/tools.ts:getAllBaseTools()</code> — tool registry</li>
+<li><code>src/state/store.ts:createStore()</code> — reactive state container (34 lines)</li>
+<li><code>src/utils/permissions/permissions.ts:hasPermissionsToUseTool()</code> — permission evaluation</li>
+</ol>
+
+<hr>
+<h2>13. Architectural Compression</h2>
+<p><strong>Permission model:</strong> Four modes with deny-before-allow evaluation across seven source layers. Conservative denial: any deny rule blocks.</p>
+
+<p><strong>Memory architecture:</strong> Four independent time horizons:</p>
+<ul>
+<li><strong>CLAUDE.md:</strong> Static instructions, 4-layer hierarchy, survives restarts.</li>
+<li><strong>MEMORY.md:</strong> Model-writable persistent memory, survives sessions.</li>
+<li><strong>Session transcript:</strong> Append-only JSONL, resumable.</li>
+<li><strong>Invoked skills cache:</strong> Tracks skills called in current session.</li>
+</ul>
+
+<p><strong>Skill system:</strong> Markdown files with YAML frontmatter. Skills compose with subagents: <code>SkillTool</code> forks new <code>query()</code> call.</p>
+
+<p><strong>Most sophisticated mechanisms:</strong></p>
+<ol>
+<li>Five-level compaction stack</li>
+<li>Streaming tool executor — begins executing read-only tools as they stream in</li>
+<li>Permission classifier — LLM call in auto mode</li>
+<li>Prompt cache sharing — subagents reuse parent's API-side cache</li>
+<li>Skill prefetch — asynchronously discovers relevant skills while model streams</li>
+<li>Tool result budget management — replaces oversized results with file references</li>
+</ol>
+
+<p><strong>Clean and well-isolated files:</strong></p>
+<ul>
+<li><code>src/state/store.ts</code> — 34 lines, pure reactive store</li>
+<li><code>src/services/tools/toolOrchestration.ts</code> — 188 lines, clear batching logic</li>
+<li><code>src/query/deps.ts</code> — 40 lines, clean dependency injection</li>
+<li><code>src/utils/forkedAgent.ts</code> — well-documented cache-sharing</li>
+<li><code>src/skills/loadSkillsDir.ts</code> — clean frontmatter parsing</li>
+<li><code>src/Task.ts</code> — clean type definitions</li>
+</ul>
+
+<p><strong>Tangled files (read with caution):</strong></p>
+<ul>
+<li><code>src/main.tsx</code> — 4,683 lines: everything touches everything</li>
+<li><code>src/query.ts</code> — 1,729 lines: deeply nested recovery logic</li>
+<li><code>src/bootstrap/state.ts</code> — global mutable singleton, acknowledged anti-pattern</li>
+<li><code>src/Tool.ts</code> — 792 lines mixing multiple concerns</li>
+</ul>
+
+<hr>
+
+<h2>14. Design Intent Inference</h2>
+<ul>
+<li><strong>Loop-as-generator pattern:</strong> Optimized for streaming UI updates, makes loop pausable for <code>--resume</code>.</li>
+<li><strong>Dependency injection:</strong> Designed for testability and swapping LLM backend.</li>
+<li><strong>YAML frontmatter skills:</strong> Designed for non-engineer authorship, documentation-first.</li>
+<li><strong>Four-source permission hierarchy:</strong> Intent to operate in enterprise environments where IT policy overrides user preferences.</li>
+<li><strong>DeepImmutable AppState:</strong> UI components forbidden from mutating state directly.</li>
+<li><strong>"DO NOT ADD MORE STATE HERE" comment:</strong> Architectural confession about bootstrap singleton growth.</li>
+<li><strong>Five-level compaction stack:</strong> Grew incrementally as users encountered longer sessions, not designed upfront.</li>
+</ul>
+
+<hr>
+
+<h2>15. Safe Surgery Map</h2>
+<p><strong>Safe to add:</strong></p>
+<ul>
+<li>New tool class implementing <code>Tool</code> interface</li>
+<li>New skill <code>.md</code> file in <code>.claude/skills/</code></li>
+<li>New slash command in <code>COMMANDS()</code></li>
+<li>New MCP server in <code>.claude/mcp.json</code></li>
+<li>New permission rule source</li>
+</ul>
+
+<p><strong>Safe to replace:</strong></p>
+<ul>
+<li><code>src/state/store.ts:createStore()</code> — 34 lines, pure function</li>
+<li><code>src/services/tools/toolOrchestration.ts:runTools()</code> — 188 lines, single caller</li>
+<li><code>src/query/deps.ts</code> — 40 lines, dependency injection interface</li>
+</ul>
+
+<p><strong>Safe to extend (additive only):</strong></p>
+<ul>
+<li><code>src/utils/claudemd.ts</code> — add new hierarchy layer</li>
+<li><code>src/utils/sessionStorage.ts</code> — add new JSONL entry types</li>
+<li><code>src/bootstrap/state.ts</code> — add fields only if cross-cutting</li>
+</ul>
+
+<p><strong>Risky to touch:</strong></p>
+<ul>
+<li><code>src/query.ts</code> — modifying loop body risks breaking compaction mechanisms</li>
+<li><code>src/main.tsx</code> — god file, initialization order critical</li>
+<li><code>src/services/api/claude.ts</code> — streaming assembly tightly coupled</li>
+<li><code>src/utils/permissions/permissions.ts</code> — security-critical evaluation order</li>
+</ul>
+
+<hr>
+<h2>16. Learning-Value Map</h2>
+<p><strong>Study deeply:</strong></p>
+<ol>
+<li><strong>queryLoop() / deps.callModel() / runTools() triangle:</strong> Core agentic loop structure, testable despite being infinite generator. Dependency injection for swapping LLM backend.</li>
+<li><strong>CLAUDE.md 4-layer hierarchy:</strong> Flexible instruction injection for individual creators and enterprise accounts.</li>
+<li><strong>Skill frontmatter format:</strong> Human-readable and machine-consumable workflow definitions.</li>
+<li><strong>Permission mode system:</strong> Graduated safety model with deny-before-allow evaluation.</li>
+<li><strong>Reactive store pattern:</strong> Minimal framework-agnostic reactive container with <code>DeepImmutable</code> enforcement.</li>
+<li><strong>Subagent context isolation:</strong> Parallel agent workstreams without cross-contamination.</li>
+<li><strong>Tool result budget + content replacement:</strong> Handling oversized assets with file references and reconstruction records.</li>
+<li><strong>Streaming tool executor:</strong> Begin executing tools as they stream in, reducing latency.</li>
+</ol>
+
+<p><strong>Study for future phases:</strong></p>
+<ol start="9">
+<li><strong>Five-level compaction stack:</strong> Failure modes at scale, triggering conditions.</li>
+<li><strong>Prompt cache sharing:</strong> Cost optimization for subagent queries.</li>
+</ol>
+
+<hr>
+
+<h2>17. Reuse / Copy-Value Map</h2>
+
+<h3>A. COPY-PASTE (use directly)</h3>
+
+<p><strong>1. Reactive store — src/state/store.ts (34 lines)</strong><br>
+Pure function wrapping value in reactive container. Zero dependencies on Claude Code specifics. Copy implementation, rename types.</p>
+
+<p><strong>2. Tool orchestration batch logic — src/services/tools/toolOrchestration.ts (188 lines)</strong><br>
+Partitions tool calls into read-only concurrent and non-read-only serial batches. Tool-agnostic. Copy batching logic, swap tool implementations.</p>
+
+<p><strong>3. Dependency injection interface — src/query/deps.ts (40 lines)</strong><br>
+Decouples agent loop from external dependencies. Copy interface pattern for swappable LLM interface.</p>
+
+<p><strong>4. JSONL transcript schema — src/utils/sessionStorage.ts</strong><br>
+Append-only JSONL with typed entries. Copy pattern, replace file-centric entries with media-centric equivalents.</p>
+
+<p><strong>5. Frontmatter parsing — src/skills/loadSkillsDir.ts</strong><br>
+Markdown + YAML frontmatter discovery. Copy discovery and parsing logic for content workflow definitions.</p>
+
+<p><strong>6. Zod validation pattern — src/services/tools/toolExecution.ts:617</strong><br>
+3-line pattern of <code>tool.inputSchema.parse(rawInput)</code> before execution. Copy identically into tool dispatch layer.</p>
+
+<p><strong>7. Task type definitions — src/Task.ts</strong><br>
+Clean TypeScript types for task state. Copy as foundation for content task system.</p>
+
+<hr>
+
+<h3>B. USE-THE-ESSENCE (adapt the pattern)</h3>
+
+<p><strong>1. The agent loop — queryLoop() → contentLoop()</strong><br>
+<em>Pattern:</em> while(true) async generator calling LLM, collecting actions, dispatching, feeding results back.<br>
+<em>Why not portable:</em> 1,729 lines entangled with code-specific context and compaction.<br>
+<em>Rebuild:</em> contentLoop() with content-context assembly, content-specific compaction, content-specific stop conditions.</p>
+
+<p><strong>2. CLAUDE.md 4-layer context → Brand Context System</strong><br>
+<em>Pattern:</em> Layered instruction injection with @include support.<br>
+<em>Why not portable:</em> Named for Claude, structured around coding workflows.<br>
+<em>Rebuild:</em> BrandContext loader with platform-policy > brand-guide > campaign-brief > session-override layers.</p>
+
+<p><strong>3. Permission gate → Publishing Gate</strong><br>
+<em>Pattern:</em> Deny-before-allow with source-priority ordering, four graduated modes.<br>
+<em>Why not portable:</em> Rules keyed to filesystem paths and bash patterns.<br>
+<em>Rebuild:</em> PublishingGate with draft/review/scheduled/live modes, rules keyed to platform actions.</p>
+
+<p><strong>4. Subagent spawning → Parallel Asset Agent</strong><br>
+<em>Pattern:</em> Fork agent with cloned state, independent abort controller, separate message history.<br>
+<em>Why not portable:</em> Clones fileStateCache with local file paths.<br>
+<em>Rebuild:</em> forkContentAgent() cloning campaign context with remote asset URLs.</p>
+
+<p><strong>5. Memory architecture → Creator Memory</strong><br>
+<em>Pattern:</em> Two-tier memory with static instructions and dynamic model-writable memory.<br>
+<em>Why not portable:</em> Code-project semantics, coding preference extraction.<br>
+<em>Rebuild:</em> CreatorMemory with brand-memory.md and session-memory.md, content-tuned extraction.</p>
+
+<p><strong>6. Hook system → Content Event Hooks</strong><br>
+<em>Pattern:</em> Pre/post tool execution hooks.<br>
+<em>Why not portable:</em> Registered against filesystem tool names.<br>
+<em>Rebuild:</em> ContentHookRegistry for BeforePublish, AfterGenerate, OnBrandViolation events.</p>
+
+<hr>
+
+<h3>C. JUST-FOR-LEARN (study, not Phase 1)</h3>
+
+<p><strong>1. Five-level compaction stack</strong><br>
+<em>Learn:</em> Context overflow failure modes and mitigation strategies.<br>
+<em>Why not Phase 1:</em> Short sessions won't manifest overflow until Phase 2+ multi-session campaigns.</p>
+
+<p><strong>2. Streaming tool executor</strong><br>
+<em>Learn:</em> Execute tools as they stream, signal/settle coordination pattern.<br>
+<em>Why not Phase 1:</em> Phase 1 actions are latency-tolerant and sequential.</p>
+
+<p><strong>3. Prompt cache sharing</strong><br>
+<em>Learn:</em> Subagents reuse parent's cached KV-store for cost reduction.<br>
+<em>Why not Phase 1:</em> Not enough traffic to justify optimization.</p>
+
+<p><strong>4. Permission classifier (auto-mode)</strong><br>
+<em>Learn:</em> LLM-based classifier with denial tracking prior.<br>
+<em>Why not Phase 1:</em> Phase 1 operates in explicit review mode.</p>
+
+<p><strong>5. ToolSearchTool deferred loading</strong><br>
+<em>Learn:</em> Discover tools not in initial context window.<br>
+<em>Why not Phase 1:</em> Fewer than 20 tools, deferred loading unnecessary.</p>
+
+<p><strong>6. Skill prefetch</strong><br>
+<em>Learn:</em> Async discovery while model streams.<br>
+<em>Why not Phase 1:</em> Small known workflow library doesn't require intelligent discovery.</p>
+
+<p><strong>7. Multi-provider API routing</strong><br>
+<em>Learn:</em> Abstract over multiple API surfaces.<br>
+<em>Why not Phase 1:</em> Single LLM provider target.</p>
+
+<hr>
+
+<h2>18. Mental Model Packet</h2>
+<ul>
+<li><code>queryLoop()</code> iterates: call LLM, collect tool_use blocks, execute tools, feed results back, stop when zero blocks remain.</li>
+<li>Every tool call passes through <code>hasPermissionsToUseTool()</code>; deny rules evaluate before allow rules across seven source layers.</li>
+<li>Reactive store enforces hard boundary: agent loop mutates state, UI only reads it.</li>
+<li>CLAUDE.md injects four-layer static context; MEMORY.md provides model-writable persistent memory.</li>
+<li>Skills are markdown files with YAML frontmatter; each spawns isolated forked <code>query()</code> call.</li>
+<li>Session state lives in three places: in-memory <code>mutableMessages[]</code>, reactive <code>AppState</code>, append-only JSONL on disk.</li>
+<li>Five-level compaction stack exists because context overflow manifests gradually.</li>
+<li><code>src/main.tsx</code> is a 4,683-line god file; everything else is relatively clean and surgically replaceable.</li>
+</ul>
+
+</div>
+
+<div id="content-zh" class="lang-zh hidden">
+<h1>Claude Code — 代码外科分析报告</h1>
+
+<div class="metadata">
+<p><strong>分析代码库：</strong> <code>repos/claude-code</code></p>
+<p><strong>分析视角：</strong> "Reel Creator" 构建者 — 一个 AI 原生社交媒体内容创作 Agent OS，类似于 Claude Code，但用于内容创作而非编码</p>
+<p><strong>报告日期：</strong> 2026-04-01</p>
+<p><strong>完成分析轮次：</strong> 7</p>
+</div>
+
+<hr>
+
+<h2>0. 范围</h2>
+<p>本报告通过七个分析维度对 Claude Code 代码库（<code>repos/claude-code/src/</code>）进行外科式剖析：入口点追踪、正常路径演练、状态架构、调度机制、副作用映射、故障面编目和架构压缩。每个发现都与特定文件和行号相关联。最终交付成果（第 16-17 节）回答了 Reel Creator 构建者的核心问题：对于每个架构组件，在第一阶段（截止日期：4 月 15 日）是 COPY-PASTE（直接复制）、USE-THE-ESSENCE（使用精髓）还是 JUST-FOR-LEARN（仅供学习）？</p>
+
+<p>代码库在 <code>src/</code> 下包含约 150+ 个 TypeScript 源文件。按行数统计的关键文件：<code>src/main.tsx</code>（4,683 行）、<code>src/query.ts</code>（1,729 行）、<code>src/skills/loadSkillsDir.ts</code>（1,086 行）、<code>src/utils/forkedAgent.ts</code>（689 行）、<code>src/Tool.ts</code>（792 行）、<code>src/services/tools/toolOrchestration.ts</code>（188 行）、<code>src/state/store.ts</code>（34 行）、<code>src/query/deps.ts</code>（40 行）。</p>
+
+<hr>
+
+<h2>1. 单句机器定义</h2>
+<p>Claude Code 执行一个有状态的、权限门控的、工具调用代理循环，它接收自然语言提示，迭代地分发 LLM API 调用和工具调用，直到不再有 tool-use 块为止，并将完整记录持久化为仅追加的 JSONL，同时维护多级上下文窗口压缩栈以将令牌使用量保持在模型限制内。</p>
+
+<hr>
+
+<h2>2. 存在原因</h2>
+<p>该系统的存在是为了解决一个特定的可靠性问题：原始 LLM 补全无法安全地写入文件、运行 shell 命令或在真实文件系统上执行多步操作，除非具备：(a) 确定性调度层，将每个模型请求的工具调用路由到正确的实现；(b) 权限门，在破坏性操作之前强制执行人机协同确认；(c) 能够在长会话中跨越上下文窗口溢出而存活的内存架构。如果缺少这三者中的任何一个，纯聊天界面要么在复杂任务上静默失败，要么在用户不知情的情况下破坏性地修改文件系统。</p>
+
+<p>Reel Creator 面临着相同的问题域，只是转移到了内容领域：原始 LLM 补全无法安全地发布到 TikTok/Instagram、调用资产生成 API 或管理多平台发布管道，除非具备相同的三个组件。架构动机完全转移；工具完全改变。</p>
+
+<hr>
+
+<h2>3. 顶层控制图</h2>
+<pre><code>CLI 入口点 (src/entrypoints/cli.tsx)
+    │
+    ▼
+Commander.js 标志解析 (src/main.tsx)
+    │
+    ├─── 交互式 REPL 路径 ──► Ink/React UI (src/replLauncher.tsx)
+    │                                    │
+    │                              REPL 输入循环
+    │                                    │
+    └─── 无头/打印路径 ──► QueryEngine.submitMessage()
+                                        │
+                                        ▼
+                               src/query.ts:queryLoop()   ◄─── while(true) 迭代引擎
+                                        │
+                          ┌─────────────┼──────────────┐
+                          ▼             ▼               ▼
+                   压缩检查      callModel()        runTools()
+                              (LLM API)          (工具调度)
+                          │             │               │
+                          │      流式 SSE        权限门
+                          │      tool_use 块  → tool.call()
+                          │             │               │
+                          └─────────────┴───────────────┘
+                                        │
+                                   记录
+                                   JSONL 写入
+                                  (~/.claude/projects/)
+</code></pre>
+
+<p>当模型发出零个 <code>tool_use</code> 内容块的响应时，循环终止。状态同时存在于三个地方：响应式 <code>AppState</code> 存储（面向 UI）、<code>QueryEngine</code> 中的 <code>mutableMessages[]</code> 数组（对话历史）以及磁盘上的仅追加 JSONL（持久记录）。</p>
+
+<hr>
+<h2>4. 具体入口点</h2>
+<p><strong>主二进制入口点：</strong> <code>src/entrypoints/cli.tsx:main()</code> — 读取 <code>process.argv</code>，对 <code>--version</code> 和 <code>--daemon-worker</code> 标志执行快速路径退出，然后委托给 <code>src/main.tsx</code>。</p>
+
+<p><strong>CLI 程序定义：</strong> <code>src/main.tsx</code> — 构造一个 Commander.js 程序，带有 <code>[prompt]</code> 位置参数和标志，包括 <code>--print</code>、<code>--model</code>、<code>--resume</code>、<code>--agent</code>、<code>--permission-mode</code> 等，以及子命令 <code>mcp</code>、<code>auth</code>、<code>plugin</code> 等。</p>
+
+<p><strong>REPL 斜杠命令：</strong> <code>src/commands.ts:COMMANDS()</code> — 返回约 80+ 个在启动时注册的 REPL ���命令：<code>/compact</code>、<code>/clear</code>、<code>/help</code>、<code>/model</code>、<code>/memory</code> 等。</p>
+
+<p><strong>SDK/无头入口点：</strong> <code>src/QueryEngine.ts:184</code> — <code>QueryEngine</code> 类构造函数初始化 <code>mutableMessages[]</code>、<code>abortController</code> 和 <code>readFileState</code>。</p>
+
+<p><strong>代理循环入口点：</strong> <code>src/query.ts:queryLoop()</code> 第 241 行 — 驱动所有 LLM 调用和工具执行的异步生成器。</p>
+
+<hr>
+
+<h2>5. 正常路径外科演练</h2>
+<p><strong>场景：</strong> 用户从终端运行 <code>claude "fix the bug in auth.ts"</code>。</p>
+
+<p><strong>步骤 1 — 二进制读取 argv：</strong> <code>src/entrypoints/cli.tsx:main()</code> 接收参数，未检测到快速路径标志，委托给 <code>src/main.tsx</code>。</p>
+
+<p><strong>步骤 2 — Commander 解析标志：</strong> 解析提示作为位置参数，激活无头打印路径。</p>
+
+<p><strong>步骤 3 — QueryEngine 初始化：</strong> 构造函数设置 <code>this.mutableMessages = []</code>，创建 <code>AbortController</code>。</p>
+
+<p><strong>步骤 4 — submitMessage() 组装上下文：</strong> 调用 <code>fetchSystemPromptParts()</code> 加载基础系统提示、CLAUDE.md 层次结构和 git 状态。</p>
+
+<p><strong>步骤 5 — 用户输入处理：</strong> <code>processUserInput()</code> 接收文本，未找到斜杠命令，创建 <code>UserMessage</code>，推送到 <code>mutableMessages</code>，记录记录。</p>
+
+<p><strong>步骤 6 — query() 委托给 queryLoop()：</strong> 传递组装的消息、系统提示、工具列表和依赖注入对象。</p>
+
+<p><strong>步骤 7 — while(true) 循环开始：</strong> 压缩检查运行。调用 <code>deps.callModel()</code>。</p>
+
+<p><strong>步骤 8 — LLM 流式响应：</strong> 模型响应一个请求 <code>FileReadTool</code> 读取 <code>auth.ts</code> 的 <code>tool_use</code> 块。</p>
+
+<p><strong>步骤 9 — 工具调度：</strong> <code>runTools()</code> 分区块。<code>FileReadTool</code> 是只读的，并发运行。</p>
+
+<p><strong>步骤 10 — 权限门和工具执行：</strong> <code>checkPermissionsAndCallTool()</code> 使用 Zod 模式验证输入。只读操作解析为允许。调用 <code>tool.call()</code>。</p>
+
+<p><strong>步骤 11 — 工具结果反馈：</strong> <code>FileReadTool</code> 读取 <code>auth.ts</code> 内容。结果作为带有 <code>tool_result</code> 块的 <code>UserMessage</code> 产生。循环继续。</p>
+
+<p><strong>步骤 12 — 第二次 LLM 调用：</strong> 循环迭代 2 包含文件内容。模型返回 <code>FileEditTool</code> tool_use 块。</p>
+
+<p><strong>步骤 13 — 写入权限检查：</strong> 写入操作需要确认。用户看到接受/拒绝 UI。用���接受。</p>
+
+<p><strong>步骤 14 — 编辑应用并循环终止：</strong> <code>FileEditTool.call()</code> 应用补丁。循环迭代 3：模型返回零个 <code>tool_use</code> 块。满足停止条件。记录完成。</p>
+
+<hr>
+
+<h2>6. 调度映射</h2>
+<p><strong>LLM → 工具调度：</strong> 模型发出带有 <code>name</code> 字段的 <code>tool_use</code> 块。<code>runTools()</code> 接收块，按只读分类分区，通过 <code>runToolUse()</code> 调度。<code>findToolByName()</code> 定位工具对象。</p>
+
+<p><strong>工具注册表：</strong> <code>src/tools.ts:getAllBaseTools()</code> — 硬编码列表：<code>AgentTool</code>、<code>BashTool</code>、<code>FileEditTool</code>、<code>FileReadTool</code> 等。MCP 工具动态实例化为 <code>MCPTool</code> 对象。</p>
+
+<p><strong>斜杠命令调度：</strong> <code>processUserInput()</code> 调用 <code>parseSlashCommand()</code> 检测前导 <code>/</code>，然后 <code>findCommand()</code> 定位匹配的 <code>Command</code> 对象。</p>
+
+<p><strong>子代理生成：</strong> <code>runAgent()</code> 通过 <code>createSubagentContext()</code> 创建隔离的执行上下文。克隆父级的文件状态缓存，创建子 <code>AbortController</code>，递归调用 <code>query()</code>。</p>
+
+<p><strong>MCP 工具加载：</strong> <code>connectToServer()</code> 创建传输，调用 <code>client.listTools()</code>，实例化 <code>MCPTool</code> 对象。</p>
+
+<p><strong>技能加载：</strong> <code>loadSkillsDir.ts</code> 扫描技能目录。每个带有有效 YAML 前置内容的 <code>.md</code> 文件成为 <code>PromptCommand</code>。当模型调用 <code>SkillTool</code> 时，它作为分叉代理子查询运行。</p>
+
+<hr>
+<h2>7. 状态模型</h2>
+<p><strong>AppState：</strong> 面向 UI 和会话级状态的主要响应式存储。字段包括：<code>settings</code>、<code>mainLoopModel</code>、<code>toolPermissionContext</code>、<code>mcp</code>、<code>plugins</code>、<code>tasks</code>、<code>fileHistory</code> 以及所有 UI 显示字段。</p>
+
+<p><strong>查询循环状态：</strong> <code>queryLoop()</code> 内部的局部可变状态 — <code>messages[]</code>、<code>toolUseContext</code>、<code>autoCompactTracking</code>、<code>turnCount</code>。仅在一次 <code>queryLoop()</code> 调用的生命周期内存在。</p>
+
+<p><strong>引导状态：</strong> 模块级全局变量 — <code>sessionId</code>、<code>totalCostUSD</code>、<code>modelUsage</code>、<code>isInteractive</code>、<code>registeredHooks</code>。第 32 行的注释："不要在这里添加更多状态。"</p>
+
+<p><strong>对话历史：</strong> 双重表示 — 在 <code>QueryEngine</code> 中作为 <code>mutableMessages[]</code> 的内存表示，以及作为仅追加 JSONL 的磁盘表示。</p>
+
+<p><strong>工具权限状态：</strong> <code>mode</code>（default/plan/bypassPermissions/auto）、<code>alwaysAllowRules</code>、<code>alwaysDenyRules</code>、<code>alwaysAskRules</code> 按来源键控。</p>
+
+<hr>
+
+<h2>8. 数据转换链</h2>
+<ol>
+<li><strong>字符串 → Commander ParsedArgs：</strong> Commander.js 将 argv 解析为结构化参数。</li>
+<li><strong>ParsedArgs → UserMessage：</strong> <code>processUserInput()</code> 将字符串包装在类型化的 <code>UserMessage</code> 对象中。</li>
+<li><strong>UserMessage → API 请求：</strong> <code>submitMessage()</code> 组装完整请求，包含系统提示、消息、工具、模型配置。</li>
+<li><strong>API 请求 → 流式事件：</strong> SDK 流式传输事件，组装成 <code>AssistantMessage</code>。</li>
+<li><strong>AssistantMessage → ToolUseBlock[]：</strong> 循环收集 <code>tool_use</code> 内容块。</li>
+<li><strong>ToolUseBlock → Zod 验证输入：</strong> 每个块的输入通过工具的 Zod 模式。</li>
+<li><strong>验证输入 → 工具结果：</strong> 工具执行，返回 <code>tool_result</code>。</li>
+<li><strong>工具结果 → UserMessage：</strong> 包装为 <code>UserMessage</code>，追加到 <code>messages[]</code>。</li>
+<li><strong>最终 AssistantMessage → JSONL：</strong> 每条消息追加到会话记录。</li>
+</ol>
+
+<hr>
+
+<h2>9. 副作用映射</h2>
+<p><strong>文件系统写入：</strong> 会话记录、文件编辑、配置保存、内存写入、撤销快照。</p>
+<p><strong>LLM API 调用：</strong> 每次循环迭代的主要模型调用，加上压缩摘要、内存提取、代理摘要、提示建议。</p>
+<p><strong>子进程生成：</strong> 带有 sandbox-exec 包装器的 <code>BashTool</code>、MCP stdio 服务器。</p>
+<p><strong>MCP 网络调用：</strong> <code>client.callTool()</code>、<code>client.listTools()</code>、<code>client.readResource()</code>。</p>
+<p><strong>持久化路径：</strong> <code>~/.claude/projects/</code>、<code>~/.claude.json</code>、<code>.claude/settings.json</code>、<code>~/.claude/memory/</code>。</p>
+
+<hr>
+
+<h2>10. 重要分支点</h2>
+<ul>
+<li><strong>权限模式分支：</strong> 首先评估拒绝规则，然后是允许规则，最后回退到基于模式的默认值。</li>
+<li><strong>交互式 vs 无头：</strong> <code>--print</code> 标志或位置提示路由到无头路径。</li>
+<li><strong>工具批处理：</strong> 分区为只读（并发）vs 非只读（串行）。</li>
+<li><strong>上下文窗口溢出：</strong> 触发压缩栈：Snip → Microcompact → Context Collapse → Autocompact → Reactive Compact。</li>
+<li><strong>子代理 vs 内联：</strong> <code>AgentTool</code> 和 <code>SkillTool</code> 生成隔离递归。</li>
+<li><strong>回退模型：</strong> <code>FallbackTriggeredError</code> 切换到配置的回退。</li>
+</ul>
+
+<hr>
+<h2>11. 故障和恢复逻辑</h2>
+<ul>
+<li><strong>权限拒绝：</strong> 返回带有 <code>is_error: true</code> 的 <code>tool_result</code>。</li>
+<li><strong>输入验证失败：</strong> Zod 解析失败 → <code>InputValidationError</code> → 错误结果返回给模型。</li>
+<li><strong>运行时工具错误：</strong> 异常被捕获，包装为错误结果，反馈给模型。</li>
+<li><strong>LLM API 速率限制：</strong> 对 429 响应进行指数退避和抖动。</li>
+<li><strong>回退模型：</strong> 将 <code>mainLoopModel</code> 切换到回退，重试当前轮次。</li>
+<li><strong>最大输出令牌恢复：</strong> 通过追加延续元消息最多重试 3 次。</li>
+<li><strong>上下文窗口溢出栈：</strong> 五种机制，严重程度逐渐升高。</li>
+<li><strong>人机协同：</strong> 为不确定的权限排队确认对话框。</li>
+</ul>
+
+<hr>
+
+<h2>12. 真正的核心循环</h2>
+<pre><code>queryLoop() ──调用──► queryModelWithStreaming()
+     │                         │
+     │                 流式 AssistantMessage
+     │                         │
+     ◄────── tool_use 块 ───┘
+     │
+     ▼
+runTools() ──分区──► runToolUse()
+                                │
+                    checkPermissionsAndCallTool()
+                                │
+                    hasPermissionsToUseTool()
+                                │
+                          tool.call()
+                                │
+                    tool_result → 下一次迭代
+</code></pre>
+
+<p><strong>七个承重文件：</strong></p>
+<ol>
+<li><code>src/query.ts:queryLoop()</code> — 迭代引擎、压缩编排、停止检测</li>
+<li><code>src/services/api/claude.ts:queryModelWithStreaming()</code> — LLM 调用、流式组装</li>
+<li><code>src/services/tools/toolExecution.ts:checkPermissionsAndCallTool()</code> — 工具调度 + 权限门</li>
+<li><code>src/Tool.ts</code> — 工具类型系统、<code>findToolByName()</code></li>
+<li><code>src/tools.ts:getAllBaseTools()</code> — 工具注册表</li>
+<li><code>src/state/store.ts:createStore()</code> — 响应式状态容器（34 行）</li>
+<li><code>src/utils/permissions/permissions.ts:hasPermissionsToUseTool()</code> — 权限评估</li>
+</ol>
+
+<hr>
+
+<h2>13. 架构压缩</h2>
+<p><strong>权限模型：</strong> 四种模式，跨七个源层的拒绝优先评估。保守拒绝：任何拒绝规则都会阻止。</p>
+
+<p><strong>内存架构：</strong> 四个独立的时间范围：</p>
+<ul>
+<li><strong>CLAUDE.md：</strong> 静态指令，4 层层次结构，重启后存活。</li>
+<li><strong>MEMORY.md：</strong> 模型可写的持久内存，跨会话存活。</li>
+<li><strong>会话记录：</strong> 仅追加 JSONL，可恢复。</li>
+<li><strong>已调用技能缓存：</strong> 跟踪当前会话中调用的技能。</li>
+</ul>
+
+<p><strong>技能系统：</strong> 带有 YAML 前置内容的 Markdown 文件。技能与子代理组合：<code>SkillTool</code> 分叉新的 <code>query()</code> 调用。</p>
+
+<p><strong>最复杂的机制：</strong></p>
+<ol>
+<li>五级压缩栈</li>
+<li>流式工具执行器 — 在工具流入时开始执行只读工具</li>
+<li>权限分类器 — 自动模式下的 LLM 调用</li>
+<li>提示缓存共享 — 子代理重用父级的 API 端缓存</li>
+<li>技能预取 — 在模型流式传输时异步发现相关技能</li>
+<li>工具结果预算管理 — 用文件引用替换过大的结果</li>
+</ol>
+
+<p><strong>干净且隔离良好的文件：</strong></p>
+<ul>
+<li><code>src/state/store.ts</code> — 34 行，纯响应式存储</li>
+<li><code>src/services/tools/toolOrchestration.ts</code> — 188 行，清晰的批处理逻辑</li>
+<li><code>src/query/deps.ts</code> — 40 行，干净的依赖注入</li>
+<li><code>src/utils/forkedAgent.ts</code> — 文档完善的缓存共享</li>
+<li><code>src/skills/loadSkillsDir.ts</code> — 干净的前置内容解析</li>
+<li><code>src/Task.ts</code> — 干净的类型定义</li>
+</ul>
+
+<p><strong>纠缠的文件（谨慎阅读）：</strong></p>
+<ul>
+<li><code>src/main.tsx</code> — 4,683 行：一切都触及一切</li>
+<li><code>src/query.ts</code> — 1,729 行：深度嵌套的恢复逻辑</li>
+<li><code>src/bootstrap/state.ts</code> — 全局可变单例，公认的反模式</li>
+<li><code>src/Tool.ts</code> — 792 行混合多个关注点</li>
+</ul>
+
+<hr>
+<h2>14. 设计意图推断</h2>
+<ul>
+<li><strong>循环即生成器模式：</strong> 针对流式 UI 更新进行优化，使循环可暂停以支持 <code>--resume</code>。</li>
+<li><strong>依赖注入：</strong> 为可测试性和交换 LLM 后端而设计。</li>
+<li><strong>YAML 前置内容技能：</strong> 为非工程师编写而设计，文档优先。</li>
+<li><strong>四源权限层次结构：</strong> 意图在企业环境中运行，IT 策略覆盖用户偏好。</li>
+<li><strong>DeepImmutable AppState：</strong> 禁止 UI 组件直接修改状态。</li>
+<li><strong>"不要在这里添加更多状态"注释：</strong> 关于引导单例增长的架构坦白。</li>
+<li><strong>五级压缩栈：</strong> 随着用户遇到更长的会话而逐步增长，而非预先设计。</li>
+</ul>
+
+<hr>
+
+<h2>15. 安全手术图</h2>
+<p><strong>安全添加：</strong></p>
+<ul>
+<li>实现 <code>Tool</code> 接口的新工具类</li>
+<li><code>.claude/skills/</code> 中的新技能 <code>.md</code> 文件</li>
+<li><code>COMMANDS()</code> 中的新斜杠命令</li>
+<li><code>.claude/mcp.json</code> 中的新 MCP 服务器</li>
+<li>新的权限规则源</li>
+</ul>
+
+<p><strong>安全替换：</strong></p>
+<ul>
+<li><code>src/state/store.ts:createStore()</code> — 34 行，纯函数</li>
+<li><code>src/services/tools/toolOrchestration.ts:runTools()</code> — 188 行，单一调用者</li>
+<li><code>src/query/deps.ts</code> — 40 行，依赖注入接口</li>
+</ul>
+
+<p><strong>安全扩展（仅添加）：</strong></p>
+<ul>
+<li><code>src/utils/claudemd.ts</code> — 添加新的层次结构层</li>
+<li><code>src/utils/sessionStorage.ts</code> — 添加新的 JSONL 条目类型</li>
+<li><code>src/bootstrap/state.ts</code> — 仅在跨领域时添加字段</li>
+</ul>
+
+<p><strong>触碰有风险：</strong></p>
+<ul>
+<li><code>src/query.ts</code> — 修改循环体有破坏压缩机制的风险</li>
+<li><code>src/main.tsx</code> — 上帝文件，初始化顺序至关重要</li>
+<li><code>src/services/api/claude.ts</code> — 流式组装紧密耦合</li>
+<li><code>src/utils/permissions/permissions.ts</code> — 安全关键的评估顺序</li>
+</ul>
+
+<hr>
+
+<h2>16. 学习价值图</h2>
+<p><strong>深入学习：</strong></p>
+<ol>
+<li><strong>queryLoop() / deps.callModel() / runTools() 三角：</strong> 核心代理循环结构，尽管是无限生成器但可测试。用于交换 LLM 后端的依赖注入。</li>
+<li><strong>CLAUDE.md 4 层层次结构：</strong> 为个人创作者和企业账户提供灵活的指令注入。</li>
+<li><strong>技能前置内容格式：</strong> 人类可读且机器可消费的工作流定义。</li>
+<li><strong>权限模式系统：</strong> 具有拒绝优先评估的分级安全模型。</li>
+<li><strong>响应式存储模式：</strong> 具有 <code>DeepImmutable</code> 强制执行的最小框架无关响应式容器。</li>
+<li><strong>子代理上下文隔离：</strong> 并行代理工作流而不交叉污染。</li>
+<li><strong>工具结果预算 + 内容替换：</strong> 使用文件引用和重建记录处理过大的资产。</li>
+<li><strong>流式工具执行器：</strong> 在工具流入时开始执行，减少延迟。</li>
+</ol>
+
+<p><strong>为未来阶段学习：</strong></p>
+<ol start="9">
+<li><strong>五级压缩栈：</strong> 大规模故障模式、触发条件。</li>
+<li><strong>提示缓存共享：</strong> 子代理查询的成本优化。</li>
+</ol>
+
+<hr>
+<h2>17. 复用 / 复制价值图</h2>
+
+<h3>A. 直接复制（直接使用）</h3>
+
+<p><strong>1. 响应式存储 — src/state/store.ts（34 行）</strong><br>
+将值包装在响应式容器中的纯函数。与 Claude Code 无关。复制实现，重命名类型。</p>
+
+<p><strong>2. 工具编排批处理逻辑 — src/services/tools/toolOrchestration.ts（188 行）</strong><br>
+将工具调用分区为只读并发和非只读串行批次。工具无关。复制批处理逻辑，交换工具实现。</p>
+
+<p><strong>3. 依赖注入接口 — src/query/deps.ts（40 行）</strong><br>
+将代理循环与外部依赖解耦。复制接口模式以获得可交换的 LLM 接口。</p>
+
+<p><strong>4. JSONL 记录模式 — src/utils/sessionStorage.ts</strong><br>
+带有类型化条目的仅追加 JSONL。复制模式，用媒体等效物替换以文件为中心的条目。</p>
+
+<p><strong>5. 前置内容解析 — src/skills/loadSkillsDir.ts</strong><br>
+Markdown + YAML 前置内容发现。为内容工作流定义复制发现和解析逻辑。</p>
+
+<p><strong>6. Zod 验证模式 — src/services/tools/toolExecution.ts:617</strong><br>
+执行前 <code>tool.inputSchema.parse(rawInput)</code> 的 3 行模式。直接复制到工具调度层。</p>
+
+<p><strong>7. 任务类型定义 — src/Task.ts</strong><br>
+干净的 TypeScript 任务状态类型。作为内容任务系统的基础进行复制。</p>
+
+<hr>
+
+<h3>B. 使用精髓（改编模式）</h3>
+
+<p><strong>1. 代理循环 — queryLoop() → contentLoop()</strong><br>
+<em>模式：</em> while(true) 异步生成器，调用 LLM、收集动作、调度、反馈结果。<br>
+<em>不可移植原因：</em> 1,729 行与代码特定上下文和压缩纠缠。<br>
+<em>重建：</em> 具有内容上下文组装、内容特定压缩、内容特定停止条件的 contentLoop()。</p>
+
+<p><strong>2. CLAUDE.md 4 层上下文 → 品牌上下文系统</strong><br>
+<em>模式：</em> 带有 @include 支持的分层指令注入。<br>
+<em>不可移植原因：</em> 以 Claude 命名，围绕编码工作流构建。<br>
+<em>重建：</em> BrandContext 加载器，具有平台策略 > 品牌指南 > 活动简报 > 会话覆盖层。</p>
+
+<p><strong>3. 权限门 → 发布门</strong><br>
+<em>模式：</em> 具有源优先级排序的拒绝优先评估，四种分级模式。<br>
+<em>不可移植原因：</em> 规则以文件系统路径和 bash 模式为键。<br>
+<em>重建：</em> 具有 draft/review/scheduled/live 模式的 PublishingGate，规则以平台操作为键。</p>
+
+<p><strong>4. 子代理生成 → 并行资产代理</strong><br>
+<em>模式：</em> 用克隆状态、独立中止控制器、独立消息历史分叉代理。<br>
+<em>不可移植原因：</em> 克隆的是本地文件路径的 fileStateCache。<br>
+<em>重建：</em> forkContentAgent() 克隆带有远程资产 URL 的活动上下文。</p>
+
+<p><strong>5. 内存架构 → 创作者内存</strong><br>
+<em>模式：</em> 静态指令和动态模型可写内存的双层内存。<br>
+<em>不可移植原因：</em> 代码项目语义，编码偏好提取。<br>
+<em>重建：</em> CreatorMemory，具有 brand-memory.md 和 session-memory.md，内容调优的提取。</p>
+
+<p><strong>6. 钩子系统 → 内容事件钩子</strong><br>
+<em>模式：</em> 工具执行前后的钩子。<br>
+<em>不可移植原因：</em> 针对文件系统工具名称注册。<br>
+<em>重建：</em> ContentHookRegistry，用于 BeforePublish、AfterGenerate、OnBrandViolation 事件。</p>
+
+<hr>
+
+<h3>C. 仅供学习（不应用于第一阶段）</h3>
+
+<p><strong>1. 五级压缩栈</strong><br>
+<em>学习：</em> 上下文溢出故障模式和缓解策略。<br>
+<em>不适用于第一阶段：</em> 短会话在第二阶段以上的多会话活动之前不会出现溢出。</p>
+
+<p><strong>2. 流式工具执行器</strong><br>
+<em>学习：</em> 在工具流式传输时执行，signal/settle 协调模式。<br>
+<em>不适用于第一阶段：</em> 第一阶段操作是延迟容忍和顺序的。</p>
+
+<p><strong>3. 提示缓存共享</strong><br>
+<em>学习：</em> 子代理重用父级的缓存 KV 存储以降低成本。<br>
+<em>不适用于第一阶段：</em> 流量不足以证明优化的合理性。</p>
+
+<p><strong>4. 权限分类器（自动模式）</strong><br>
+<em>学习：</em> 具有拒绝跟踪先验的基于 LLM 的分类器。<br>
+<em>不适用于第一阶段：</em> 第一阶段在显式审查模式下运行。</p>
+
+<p><strong>5. ToolSearchTool 延迟加载</strong><br>
+<em>学习：</em> 发现不在初始上下文窗口中的工具。<br>
+<em>不适用于第一阶段：</em> 少于 20 个工具，延迟加载不必要。</p>
+
+<p><strong>6. 技能预取</strong><br>
+<em>学习：</em> 在模型流式传输时异步发现。<br>
+<em>不适用于第一阶段：</em> 小型已知工作流库不需要智能发现。</p>
+
+<p><strong>7. 多提供商 API 路由</strong><br>
+<em>学习：</em> 抽象多个 API 表面。<br>
+<em>不适用于第一阶段：</em> 单一 LLM 提供商目标。</p>
+
+<hr>
+
+<h2>18. 心智模型包</h2>
+<ul>
+<li><code>queryLoop()</code> 迭代：调用 LLM、收集 tool_use 块、执行工具、反馈结果、当剩余零个块时停止。</li>
+<li>每个工具调用都通过 <code>hasPermissionsToUseTool()</code>；拒绝规则在七个源层的允许规则之前评估。</li>
+<li>响应式存储强制执行硬边界：代理循环修改状态，UI 只读取。</li>
+<li>CLAUDE.md 注入四层静态上下文；MEMORY.md 提供模型可写的持久内存。</li>
+<li>技能是带有 YAML 前置内容的 Markdown 文件；每个都生成隔离的分叉 <code>query()</code> 调用。</li>
+<li>会话状态存在于三个地方：内存中的 <code>mutableMessages[]</code>、响应式 <code>AppState</code>、磁盘上的仅追加 JSONL。</li>
+<li>五级压缩栈的存在是因为上下文溢出是逐步显现的。</li>
+<li><code>src/main.tsx</code> 是一个 4,683 行的上帝文件；其他一切都相对干净且可以外科式替换。</li>
+</ul>
+
+</div>
+
+<script>
+function toggleLanguage() {
+  const en = document.getElementById('content-en');
+  const zh = document.getElementById('content-zh');
+  const btn = document.getElementById('toggle-text');
+  
+  if (en.classList.contains('hidden')) {
+    en.classList.remove('hidden');
+    zh.classList.add('hidden');
+    btn.textContent = '\u{1F1E8}\u{1F1F3} 切换到中文';
+    localStorage.setItem('lang', 'en');
+    document.documentElement.lang = 'en';
+  } else {
+    en.classList.add('hidden');
+    zh.classList.remove('hidden');
+    btn.textContent = '\u{1F1EC}\u{1F1E7} Switch to English';
+    localStorage.setItem('lang', 'zh');
+    document.documentElement.lang = 'zh';
+  }
+}
+
+(function() {
+  const saved = localStorage.getItem('lang');
+  if (saved === 'zh') {
+    document.getElementById('content-en').classList.add('hidden');
+    document.getElementById('content-zh').classList.remove('hidden');
+    document.getElementById('toggle-text').textContent = '\u{1F1EC}\u{1F1E7} Switch to English';
+    document.documentElement.lang = 'zh';
+  }
+  hljs.highlightAll();
+})();
+</script>
+</body>
+</html>
