@@ -31,10 +31,12 @@ Each report is expected to answer the same core questions:
 | System | Focus | Date | English | 中文 |
 |---|---|---|---|---|
 | Claude Code | Agent runtime and tool-loop architecture | 2026-04-01 | [EN](reports/claude-code-agent-runtime-surgical-analysis.md) | [中文](reports/claude-code-agent-runtime-surgical-analysis.cn.md) |
+| DeerFlow | AgentOS-base suitability, adoption boundary, and reusable subsystems | 2026-04-02 | [EN](reports/deer-flow-agentos-base-surgical-analysis.md) | [中文](reports/deer-flow-agentos-base-surgical-analysis.cn.md) |
 | OpenClaw | Core agent runtime for a local-first then SaaS shell | 2026-04-01 | [EN](reports/openclaw-core-agent-runtime-surgical-analysis.md) | [中文](reports/openclaw-core-agent-runtime-surgical-analysis.cn.md) |
 
 ## Notes
 
 - The Claude Code report is preserved from the repo’s original single-report README publication and moved into `reports/`.
+- The DeerFlow report is curated from the comparison workspace research output and republished here under a stable slug, with a matching Chinese peer file.
 - The OpenClaw report is curated from the comparison workspace research output and republished here under a stable slug.
 - This repository is documentation-only; it does not define a build, test, or code generation workflow.

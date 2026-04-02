@@ -31,10 +31,12 @@
 | 系统 | 聚焦范围 | 日期 | English | 中文 |
 |---|---|---|---|---|
 | Claude Code | Agent 运行时与工具循环架构 | 2026-04-01 | [EN](reports/claude-code-agent-runtime-surgical-analysis.md) | [中文](reports/claude-code-agent-runtime-surgical-analysis.cn.md) |
+| DeerFlow | 作为 AgentOS 基座的适配性、采纳边界与可复用子系统 | 2026-04-02 | [EN](reports/deer-flow-agentos-base-surgical-analysis.md) | [中文](reports/deer-flow-agentos-base-surgical-analysis.cn.md) |
 | OpenClaw | 面向 local-first 到 SaaS shell 的核心 agent 运行时 | 2026-04-01 | [EN](reports/openclaw-core-agent-runtime-surgical-analysis.md) | [中文](reports/openclaw-core-agent-runtime-surgical-analysis.cn.md) |
 
 ## 说明
 
 - Claude Code 报告保留了仓库原先“单 README 发布”的主体内容，并迁移到 `reports/` 下。
+- DeerFlow 报告来自比较工作区中的研究产物，并在此仓库中以稳定 slug 重新发布，同时补齐了配对中文版本。
 - OpenClaw 报告来自比较工作区中的研究产物，并在此仓库中以稳定 slug 重新发布。
 - 这个仓库是纯文档仓库，不声明构建、测试或代码生成工作流。
